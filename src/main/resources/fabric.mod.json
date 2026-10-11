@@ -1,0 +1,20 @@
+{
+  "schemaVersion": 1,
+  "id": "spacemod",
+  "version": "${version}",
+  "name": "Space Mod",
+  "description": "Sube lo bastante alto en el cielo y llegaras al espacio.",
+  "authors": [],
+  "license": "MIT",
+  "environment": "*",
+  "entrypoints": {
+    "main": ["com.spacemod.SpaceMod"],
+    "client": ["com.spacemod.client.SpaceModClient"]
+  },
+  "depends": {
+    "fabricloader": ">=0.14.21",
+    "minecraft": "~1.20.1",
+    "java": ">=17",
+    "fabric-api": "*"
+  }
+}
