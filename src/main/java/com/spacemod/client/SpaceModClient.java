@@ -36,7 +36,7 @@ public class SpaceModClient implements ClientModInitializer {
 	private static final double DRAW_DISTANCE = 220;
 
 	/** Radio del planeta en bloques-voxel. Mas alto = mas detalle, pero mas caro de dibujar. */
-	private static final int N = 14;
+	private static final int N = 18;
 
 	/** Caras visibles del planeta: 4 vertices (x,y,z) + color RGB por cara. */
 	private static float[] faceVerts;

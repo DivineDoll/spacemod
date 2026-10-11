@@ -43,7 +43,10 @@ public class SpaceMod implements ModInitializer {
 	 * el cliente. Su cima queda a Y=ENTRY_Y justo debajo de donde apareces, y la superficie se curva
 	 * hacia abajo. Si te alejas volando, la ves moverse; si te acercas, crece.
 	 */
-	public static final double EARTH_RADIUS = 500;
+	public static final double EARTH_RADIUS = 3000;
+
+	/** Por debajo de esta altura hay "atmosfera": se puede respirar sin casco. */
+	public static final int ATMOSPHERE_Y = 100;
 	public static final Vec3d EARTH_CENTER = new Vec3d(0.5, ENTRY_Y - EARTH_RADIUS, 0.5);
 
 	/** Altura a la que reapareces sobre la Tierra al entrar desde el espacio (menor que SPACE_Y). */
@@ -82,7 +85,8 @@ public class SpaceMod implements ModInitializer {
 			if (dim == World.OVERWORLD && player.getY() >= SPACE_Y) {
 				goToSpace(player, space);
 			} else if (dim == SPACE) {
-				if (player.getPos().squaredDistanceTo(EARTH_CENTER) <= EARTH_RADIUS * EARTH_RADIUS) {
+				// Al bajar de ENTRY_Y llegas a la Tierra (en cualquier punto, asi nunca caes al vacio).
+				if (player.getY() < ENTRY_Y) {
 					enterEarth(player, overworld);
 				} else {
 					applySpaceEffects(player);
@@ -128,14 +132,14 @@ public class SpaceMod implements ModInitializer {
 			return;
 		}
 		ItemStack helmet = player.getEquippedStack(net.minecraft.entity.EquipmentSlot.HEAD);
-		if (!helmet.isEmpty()) {
+		if (!helmet.isEmpty() || player.getY() < ATMOSPHERE_Y) {
 			player.setAir(player.getMaxAir());
 			return;
 		}
 		int air = player.getAir() - 10;
 		if (air <= -20) {
-			player.setAir(0);
-			player.damage(player.getDamageSources().drown(), 2.0F);
+			player.setAir(60);
+			player.damage(player.getDamageSources().drown(), 1.0F);
 		} else {
 			player.setAir(air);
 		}
