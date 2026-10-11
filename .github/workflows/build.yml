@@ -5,6 +5,9 @@ on:
   push:
     branches: ["**"]
 
+permissions:
+  contents: read
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -18,13 +21,17 @@ jobs:
           distribution: temurin
           java-version: "17"
 
+      - name: Instalar Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.8"
+
       - name: Compilar mod
-        run: |
-          chmod +x gradlew
-          ./gradlew build
+        run: gradle build
 
       - name: Guardar archivo JAR
         uses: actions/upload-artifact@v4
         with:
           name: spacemod-build
           path: build/libs/*.jar
+          if-no-files-found: error
