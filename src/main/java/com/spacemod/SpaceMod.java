@@ -27,10 +27,10 @@ public class SpaceMod implements ModInitializer {
 	public static final int SPACE_Y = 330;
 
 	/** Altura a la que apareces en el espacio (no hay piso). */
-	public static final int SPACE_SPAWN_Y = 200;
+	public static final int SPACE_SPAWN_Y = 300;
 
-	/** Si caes por debajo de esta altura en el espacio, vuelves a la Tierra. */
-	public static final int RETURN_Y = 20;
+	/** Si bajas de esta altura en el espacio, "llegas" a la Tierra (que esta debajo de ti). */
+	public static final int ENTRY_Y = 40;
 
 	public static final RegistryKey<World> SPACE =
 			RegistryKey.of(RegistryKeys.WORLD, new Identifier(MOD_ID, "space"));
@@ -39,11 +39,12 @@ public class SpaceMod implements ModInitializer {
 	public static final BlockPos SPACE_ORIGIN = new BlockPos(0, SPACE_SPAWN_Y, 0);
 
 	/**
-	 * La Tierra (Minecraft) que se ve a lo lejos en el espacio. Es virtual: la dibuja el cliente
-	 * y el servidor solo detecta cuando llegas a su superficie.
+	 * La Tierra (Minecraft) esta FIJA en el espacio, debajo del punto de llegada. Es virtual: la dibuja
+	 * el cliente. Su cima queda a Y=ENTRY_Y justo debajo de donde apareces, y la superficie se curva
+	 * hacia abajo. Si te alejas volando, la ves moverse; si te acercas, crece.
 	 */
-	public static final Vec3d EARTH_CENTER = new Vec3d(0, 200, 3200);
-	public static final double EARTH_RADIUS = 900;
+	public static final double EARTH_RADIUS = 500;
+	public static final Vec3d EARTH_CENTER = new Vec3d(0.5, ENTRY_Y - EARTH_RADIUS, 0.5);
 
 	/** Altura a la que reapareces sobre la Tierra al entrar desde el espacio (menor que SPACE_Y). */
 	public static final int REENTRY_Y = 300;
@@ -83,8 +84,6 @@ public class SpaceMod implements ModInitializer {
 			} else if (dim == SPACE) {
 				if (player.getPos().squaredDistanceTo(EARTH_CENTER) <= EARTH_RADIUS * EARTH_RADIUS) {
 					enterEarth(player, overworld);
-				} else if (player.getY() < RETURN_Y) {
-					returnToEarth(player, overworld);
 				} else {
 					applySpaceEffects(player);
 				}
@@ -95,28 +94,12 @@ public class SpaceMod implements ModInitializer {
 	private void goToSpace(ServerPlayerEntity player, ServerWorld space) {
 		launchPoints.put(player.getUuid(), player.getBlockPos());
 
-		// Sin piso: en el espacio tienes que volar o caeras de vuelta a la Tierra.
+		// Apareces ARRIBA de la Tierra. Sin piso: si no vuelas, caes (despacio) hacia ella.
 		player.teleport(space, SPACE_ORIGIN.getX() + 0.5, SPACE_ORIGIN.getY(), SPACE_ORIGIN.getZ() + 0.5,
 				player.getYaw(), player.getPitch());
 		player.setVelocity(Vec3d.ZERO);
 		player.velocityModified = true;
 		player.fallDistance = 0;
-	}
-
-	private void returnToEarth(ServerPlayerEntity player, ServerWorld overworld) {
-		BlockPos launch = launchPoints.remove(player.getUuid());
-		if (launch == null) {
-			launch = overworld.getSpawnPos();
-		}
-		int x = launch.getX();
-		int z = launch.getZ();
-		int y = overworld.getTopY(Heightmap.Type.MOTION_BLOCKING, x, z) + 1;
-
-		player.teleport(overworld, x + 0.5, y, z + 0.5, player.getYaw(), player.getPitch());
-		player.setVelocity(Vec3d.ZERO);
-		player.velocityModified = true;
-		player.fallDistance = 0;
-		player.setAir(player.getMaxAir());
 	}
 
 	/** Llegaste a la Tierra: reentras sobre tu punto de despegue, cayendo despacio. */

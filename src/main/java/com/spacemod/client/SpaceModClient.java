@@ -1,5 +1,8 @@
 package com.spacemod.client;
 
+import java.util.ArrayList;
+import java.util.List;
+
 import com.mojang.blaze3d.systems.RenderSystem;
 import com.spacemod.SpaceMod;
 
@@ -20,24 +23,150 @@ import net.minecraft.util.math.Vec3d;
 import org.joml.Matrix4f;
 
 /**
- * Dibuja la Tierra de Minecraft en el cielo del espacio.
+ * Dibuja la Tierra de Minecraft justo debajo de ti en el espacio, hecha de BLOQUES (un planeta
+ * cubico/pixelado) en vez de una esfera lisa.
  *
- * Truco: la Tierra real esta a miles de bloques (mas lejos que el plano lejano de la camara), asi que
- * se dibuja a una distancia fija y mas pequena, con el mismo tamano aparente. Al acercarte, el angulo
- * que ocupa crece, y se ve cada vez mas grande.
+ * Truco: la Tierra "real" esta a miles de bloques, mas alla del plano lejano de la camara, asi que se
+ * dibuja a una distancia fija y mas pequena con el mismo tamano aparente. Al bajar, la distancia virtual
+ * se acorta y el planeta ocupa un angulo cada vez mayor.
  */
 @Environment(EnvType.CLIENT)
 public class SpaceModClient implements ClientModInitializer {
-	/** Distancia a la que se dibuja la esfera (dentro del plano lejano de la camara). */
+	/** Distancia a la que se dibuja el planeta (dentro del plano lejano de la camara). */
 	private static final double DRAW_DISTANCE = 220;
 
-	private static final int LAT = 32;
-	private static final int LON = 64;
+	/** Radio del planeta en bloques-voxel. Mas alto = mas detalle, pero mas caro de dibujar. */
+	private static final int N = 14;
+
+	/** Caras visibles del planeta: 4 vertices (x,y,z) + color RGB por cara. */
+	private static float[] faceVerts;
+	private static int[] faceColors;
+	private static int faceCount;
 
 	@Override
 	public void onInitializeClient() {
+		buildPlanet();
 		WorldRenderEvents.LAST.register(SpaceModClient::render);
 	}
+
+	// ---------- Modelo del planeta ----------
+
+	private static boolean solid(int x, int y, int z) {
+		double dx = x + 0.5;
+		double dy = y + 0.5;
+		double dz = z + 0.5;
+		return dx * dx + dy * dy + dz * dz <= (double) N * N;
+	}
+
+	private static void buildPlanet() {
+		List<float[]> verts = new ArrayList<>();
+		List<Integer> colors = new ArrayList<>();
+
+		for (int x = -N; x < N; x++) {
+			for (int y = -N; y < N; y++) {
+				for (int z = -N; z < N; z++) {
+					if (!solid(x, y, z)) {
+						continue;
+					}
+					int base = blockColor(x, y, z);
+					// 6 caras; solo las que dan al vacio. Sombreado estilo Minecraft.
+					addFace(verts, colors, x, y, z, 0, 1, 0, base, 1.0f);   // arriba
+					addFace(verts, colors, x, y, z, 0, -1, 0, base, 0.5f);  // abajo
+					addFace(verts, colors, x, y, z, 0, 0, 1, base, 0.8f);   // sur
+					addFace(verts, colors, x, y, z, 0, 0, -1, base, 0.8f);  // norte
+					addFace(verts, colors, x, y, z, 1, 0, 0, base, 0.6f);   // este
+					addFace(verts, colors, x, y, z, -1, 0, 0, base, 0.6f);  // oeste
+				}
+			}
+		}
+
+		faceCount = verts.size();
+		faceVerts = new float[faceCount * 12];
+		faceColors = new int[faceCount];
+		for (int i = 0; i < faceCount; i++) {
+			System.arraycopy(verts.get(i), 0, faceVerts, i * 12, 12);
+			faceColors[i] = colors.get(i);
+		}
+	}
+
+	private static void addFace(List<float[]> verts, List<Integer> colors,
+			int x, int y, int z, int nx, int ny, int nz, int base, float shade) {
+		if (solid(x + nx, y + ny, z + nz)) {
+			return;
+		}
+
+		float x0 = x;
+		float y0 = y;
+		float z0 = z;
+		float x1 = x + 1;
+		float y1 = y + 1;
+		float z1 = z + 1;
+		float[] v;
+
+		if (ny == 1) {
+			v = new float[] { x0, y1, z0, x0, y1, z1, x1, y1, z1, x1, y1, z0 };
+		} else if (ny == -1) {
+			v = new float[] { x0, y0, z0, x1, y0, z0, x1, y0, z1, x0, y0, z1 };
+		} else if (nz == 1) {
+			v = new float[] { x0, y0, z1, x1, y0, z1, x1, y1, z1, x0, y1, z1 };
+		} else if (nz == -1) {
+			v = new float[] { x0, y0, z0, x0, y1, z0, x1, y1, z0, x1, y0, z0 };
+		} else if (nx == 1) {
+			v = new float[] { x1, y0, z0, x1, y1, z0, x1, y1, z1, x1, y0, z1 };
+		} else {
+			v = new float[] { x0, y0, z0, x0, y0, z1, x0, y1, z1, x0, y1, z0 };
+		}
+
+		int r = (int) (((base >> 16) & 255) * shade);
+		int g = (int) (((base >> 8) & 255) * shade);
+		int b = (int) ((base & 255) * shade);
+		verts.add(v);
+		colors.add((r << 16) | (g << 8) | b);
+	}
+
+	private static int hash(int x, int y, int z) {
+		int h = x * 73856093 ^ y * 19349663 ^ z * 83492791;
+		h ^= h >>> 13;
+		h *= 0x5bd1e995;
+		h ^= h >>> 15;
+		return Math.floorMod(h, 100);
+	}
+
+	/** Color de bloque: agua, cesped, arena, piedra, nieve... con variacion por bloque (efecto pixelado). */
+	private static int blockColor(int x, int y, int z) {
+		double cx = x + 0.5;
+		double cy = y + 0.5;
+		double cz = z + 0.5;
+		double len = Math.sqrt(cx * cx + cy * cy + cz * cz);
+		double lat = Math.asin(cy / len);
+		double lon = Math.atan2(cz, cx);
+
+		int rgb;
+		double land = Math.sin(lon * 2 + 1) * Math.cos(lat * 2)
+				+ Math.sin(lon * 3 + lat * 3) * 0.6
+				+ Math.sin(lat * 5 + lon) * 0.4;
+		int n = hash(x, y, z);
+
+		if (Math.abs(lat) > 1.2) {
+			rgb = 0xF5FAFA; // nieve
+		} else if (land > 1.0) {
+			rgb = n < 60 ? 0x7D7D7D : 0x6B6B6B; // montanas de piedra
+		} else if (land > 0.7 && Math.abs(lat) < 0.8) {
+			rgb = n < 70 ? 0xDBCF8E : 0xCFC283; // arena
+		} else if (land > 0.2) {
+			rgb = n < 65 ? 0x5D9C3A : 0x4F8A30; // cesped
+		} else {
+			rgb = n < 70 ? 0x3F76E4 : 0x3566CC; // agua
+		}
+
+		// Algunas "nubes": bloques blancos sueltos.
+		if (n > 93) {
+			rgb = 0xF0F0F0;
+		}
+		return rgb;
+	}
+
+	// ---------- Dibujo ----------
 
 	private static void render(WorldRenderContext ctx) {
 		ClientWorld world = ctx.world();
@@ -45,6 +174,7 @@ public class SpaceModClient implements ClientModInitializer {
 			return;
 		}
 
+		// El planeta esta FIJO en el mundo: la direccion y la distancia salen de su posicion real.
 		Vec3d toEarth = SpaceMod.EARTH_CENTER.subtract(ctx.camera().getPos());
 		double dist = toEarth.length();
 		if (dist <= SpaceMod.EARTH_RADIUS + 1) {
@@ -52,12 +182,14 @@ public class SpaceModClient implements ClientModInitializer {
 		}
 
 		double scale = DRAW_DISTANCE / dist;
-		float radius = (float) (SpaceMod.EARTH_RADIUS * scale);
+		double drawnRadius = SpaceMod.EARTH_RADIUS * scale;
+		float s = (float) (drawnRadius / N);
 		Vec3d pos = toEarth.multiply(scale);
 
 		MatrixStack matrices = ctx.matrixStack();
 		matrices.push();
 		matrices.translate(pos.x, pos.y, pos.z);
+		matrices.scale(s, s, s);
 		Matrix4f mat = matrices.peek().getPositionMatrix();
 
 		float fogStart = RenderSystem.getShaderFogStart();
@@ -72,21 +204,15 @@ public class SpaceModClient implements ClientModInitializer {
 		BufferBuilder buf = Tessellator.getInstance().getBuffer();
 		buf.begin(VertexFormat.DrawMode.QUADS, VertexFormats.POSITION_COLOR);
 
-		for (int i = 0; i < LAT; i++) {
-			double lat0 = Math.PI * i / LAT - Math.PI / 2;
-			double lat1 = Math.PI * (i + 1) / LAT - Math.PI / 2;
-			double latMid = (lat0 + lat1) / 2;
-			for (int j = 0; j < LON; j++) {
-				double lon0 = 2 * Math.PI * j / LON;
-				double lon1 = 2 * Math.PI * (j + 1) / LON;
-				double lonMid = (lon0 + lon1) / 2;
-
-				int[] c = earthColor(latMid, lonMid);
-
-				vertex(buf, mat, lat0, lon0, radius, c);
-				vertex(buf, mat, lat1, lon0, radius, c);
-				vertex(buf, mat, lat1, lon1, radius, c);
-				vertex(buf, mat, lat0, lon1, radius, c);
+		for (int i = 0; i < faceCount; i++) {
+			int c = faceColors[i];
+			int r = (c >> 16) & 255;
+			int g = (c >> 8) & 255;
+			int b = c & 255;
+			int o = i * 12;
+			for (int k = 0; k < 4; k++) {
+				buf.vertex(mat, faceVerts[o + k * 3], faceVerts[o + k * 3 + 1], faceVerts[o + k * 3 + 2])
+						.color(r, g, b, 255).next();
 			}
 		}
 
@@ -96,61 +222,5 @@ public class SpaceModClient implements ClientModInitializer {
 		RenderSystem.setShaderFogStart(fogStart);
 		RenderSystem.setShaderFogEnd(fogEnd);
 		matrices.pop();
-	}
-
-	private static void vertex(BufferBuilder buf, Matrix4f mat, double lat, double lon, float radius, int[] c) {
-		float x = (float) (Math.cos(lat) * Math.cos(lon)) * radius;
-		float y = (float) Math.sin(lat) * radius;
-		float z = (float) (Math.cos(lat) * Math.sin(lon)) * radius;
-		buf.vertex(mat, x, y, z).color(c[0], c[1], c[2], 255).next();
-	}
-
-	/** Color de un trozo de la Tierra: oceanos, continentes, desiertos, hielo en los polos y nubes. */
-	private static int[] earthColor(double lat, double lon) {
-		int r;
-		int g;
-		int b;
-
-		double land = Math.sin(lon * 3 + 1) * Math.cos(lat * 2)
-				+ Math.sin(lon * 5 + lat * 4) * 0.5
-				+ Math.sin(lat * 7 + lon * 2) * 0.3;
-
-		if (Math.abs(lat) > 1.25) {
-			r = 235;
-			g = 240;
-			b = 250;
-		} else if (land > 0.8 && Math.abs(lat) < 0.7) {
-			r = 205;
-			g = 175;
-			b = 110;
-		} else if (land > 0.35) {
-			r = 55;
-			g = 140;
-			b = 55;
-		} else {
-			r = 25;
-			g = 75;
-			b = 190;
-		}
-
-		double cloud = Math.sin(lon * 9 + lat * 3) * Math.sin(lat * 11 - lon * 4);
-		if (cloud > 0.55) {
-			r = (r + 255) / 2;
-			g = (g + 255) / 2;
-			b = (b + 255) / 2;
-		}
-
-		// Iluminacion fija para que se vea redonda: mas claro hacia el "sol".
-		double nx = Math.cos(lat) * Math.cos(lon);
-		double ny = Math.sin(lat);
-		double nz = Math.cos(lat) * Math.sin(lon);
-		double dot = nx * 0.5 + ny * 0.4 + nz * -0.77;
-		double light = 0.35 + 0.65 * Math.max(0, dot);
-
-		return new int[] {
-				(int) Math.min(255, r * light),
-				(int) Math.min(255, g * light),
-				(int) Math.min(255, b * light)
-		};
 	}
 }
