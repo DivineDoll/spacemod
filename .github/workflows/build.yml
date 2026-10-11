@@ -1,23 +1,46 @@
-name: build
+name: Build SpaceMod
 
 on:
   push:
+    branches: ["**"]
+  pull_request:
   workflow_dispatch:
+
+permissions:
+  contents: read
 
 jobs:
   build:
     runs-on: ubuntu-latest
+
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-java@v4
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Java 17
+        uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: 17
-      - uses: gradle/actions/setup-gradle@v3
+          java-version: "17"
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Build SpaceMod
+        run: |
+          if [ -f ./gradlew ]; then
+            chmod +x ./gradlew
+            ./gradlew build
+          elif [ -f ./build.gradle ] || [ -f ./build.gradle.kts ]; then
+            gradle build
+          else
+            echo "No se encontró la configuración de Gradle."
+            exit 1
+          fi
+
+      - name: Upload mod JARs
+        uses: actions/upload-artifact@v4
         with:
-          gradle-version: 8.10.2
-      - run: gradle build --no-daemon
-      - uses: actions/upload-artifact@v4
-        with:
-          name: spacemod
+          name: spacemod-build
           path: build/libs/*.jar
+          if-no-files-found: error
